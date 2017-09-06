@@ -137,6 +137,12 @@ class Spreadsheets(Apps):
             def __repr__(self):
                 return self._values.__repr__()
 
+            def update(self, values):
+                cols, rows = self._sheet.get_sheet_dimensions()
+                self._sheet.update_range(self._sheet.get_range_name(1, self._index + 1)+":"+
+                                         self._sheet.get_range_name(1, cols),
+                                         [values])
+
             def __getattribute__(self, item):
                 try:
                     return object.__getattribute__(self, item)

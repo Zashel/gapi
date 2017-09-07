@@ -54,6 +54,7 @@ class SCOPE:
 DRIVE = "https://www.googleapis.com/drive/v3"
 TEAMDRIVES = DRIVE + "/teamdrives"
 FILESDRIVE = DRIVE + "/files"
+COPYFILE = FILESDRIVE + "/{}/copy"
 
 SCRIPTS = "https://script.googleapis.com/v1/scripts/{}:run"
 
@@ -341,6 +342,15 @@ class GoogleAPI(Requests):
             else:
                 raise FileNotFoundError()
 
+    def file_copy(self, origin, new_name):
+        files = self.files
+        if origin in files and new_name not in files:
+            file_id = self._files[origin]["id"]
+            self.post(COPYFILE.format(file_id), get={"supportsTeamDrives": self._is_teamdrive},
+                      json={"name": new_name})
+        else:
+            raise FileNotFoundError
+
     def files_list(self, *, drive_name=None, is_teamdrive=False):
         if drive_name is not None:
             if is_teamdrive is True:
@@ -503,7 +513,17 @@ class GoogleAPI(Requests):
         else:
             raise FileNotOpenError()
 
-    def spreadsheet_open(self, *, name):
+    def spreadsheet_get_total_cells(self, *, name=None):
+        self._files_get_id_by_name(name)
+        sheets = self._opened_files[self._file_id]["sheets"]
+        return sum([sheet["properties"]["gridProperties"]["columnCount"]*sheet["properties"]["gridProperties"]["rowCount"]
+                    for sheet in sheets])
+
+    def spreadsheet_open(self, name=None, **kwargs):
+        if name is None and "name" in kwargs:
+            name = kwargs["name"]
+        elif name is None:
+            raise FileNotFoundError()
         if name in self.spreadsheets:
             self._files_get_id_by_name(name)
             self.get(SHEETS + "/" + str(self._file_id))

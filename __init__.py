@@ -383,6 +383,17 @@ class GoogleAPI(Requests):
             break
         return self._files
 
+    def _files_open(self, path, returner, name, where=None):
+        if where is None:
+            where = self.files
+        if name in where:
+            self._files_get_id_by_name(name)
+            self.get(path + "/" + str(self._file_id))
+            self._opened_files[self._file_id] = json.loads(self.text)
+            return returner(self, name)
+        else:
+            raise FileNotFoundError()
+
     # SCRIPTS
     def script(self, script_id, function, parameters, dev_mode=False):
         data = {"function": function,
@@ -524,13 +535,7 @@ class GoogleAPI(Requests):
             name = kwargs["name"]
         elif name is None:
             raise FileNotFoundError()
-        if name in self.spreadsheets:
-            self._files_get_id_by_name(name)
-            self.get(SHEETS + "/" + str(self._file_id))
-            self._opened_files[self._file_id] = json.loads(self.text)
-            return Spreadsheets(self, name)
-        else:
-            raise FileNotFoundError()
+        return self._files_open(self, SHEETS, Spreadsheets, name, self.spreadsheets)
 
     def spreadsheet_open_sheet(self, sheet_name, *, name=None):
         self._files_get_id_by_name(name)

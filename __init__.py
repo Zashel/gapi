@@ -118,29 +118,45 @@ class Apps(object):
 
 class Spreadsheets(Apps):
     class Sheet(Apps):
-        class Row():
+        class Row(list):
             def __init__(self, index, values, sheet):
+                super().__init__(values)
                 self._index = index
-                self._values = values
                 self._sheet = sheet
 
             def __getitem__(self, key):
-                return self._values[key]
+                if list.__getitem__(self, key).startswith("="):
+                    list.__setitem__ (self, key,
+                                      self.spreadsheet.get_range(self.spreadsheet.get_range_name(key+1, self._index+1)))
+                return list.__getitem__(self, key)
 
             def __setitem__(self, key, value):
                 self._sheet.update_range(self._sheet.get_range_name(key+1, self._index+1), [[value]])
-                self._values[key] = value
+                if value.startswith("="):
+                    value = "Cargando..."
+                    while value not in ("Cargando...", "Loading..."):
+                        time.sleep(1)
+                        value = self.spreadsheet.get_range(self.spreadsheet.get_range_name(key+1, self._index+1))
+                super().__setitem__(key, value)
 
             def __delitem__(self, key):
                 self._sheet.clear_range(self._sheet.get_range_name(key + 1, self._index + 1))
-                self._values[key] = ""
+                super().__setitem__(key, "")
 
-            def __repr__(self):
-                return self._values.__repr__()
+            #def __repr__(self):
+            #    return self._values.__repr__()
+
+            @property
+            def row_index(self):
+                return self._row
 
             @property
             def sheet_name(self):
                 return self._sheet.sheet_name
+
+            @property
+            def spreadsheet(self):
+                return self._sheet.spreadsheet
 
             def update(self, values):
                 cols, rows = self._sheet.get_sheet_dimensions()
@@ -148,7 +164,7 @@ class Spreadsheets(Apps):
                                          self._sheet.get_range_name(1, cols),
                                          [values])
 
-            def __getattribute__(self, item):
+            """def __getattribute__(self, item):
                 try:
                     return object.__getattribute__(self, item)
                 except AttributeError:
@@ -156,19 +172,24 @@ class Spreadsheets(Apps):
 
             def __getattr__(self, item):
                 try:
-                    return self._values.__getattribute__(item)
+                    return self.__getattribute__(item)
                 except AttributeError:
-                    raise AttributeError()
+                    raise AttributeError()"""
 
-        def __init__(self, sheet_name, gapi, name):
+        def __init__(self, sheet_name, gapi, name, spreadsheet):
             Apps.__init__(self, gapi, name)
             self._app_name = "spreadsheet"
             self._sheet_name = sheet_name
+            self._spreadsheet = spreadsheet
             Apps.__getattribute__(self, "api").spreadsheet_open_sheet(self.sheet_name, name=self.name)
 
         @property
         def sheet_name(self):
             return self._sheet_name
+
+        @property
+        def spreadsheet(self):
+            return self._spreadsheet
 
         def __getattr__(self, item):
             Apps.__getattribute__(self, "api").spreadsheet_open_sheet(self.sheet_name, name=self.name)
@@ -241,7 +262,7 @@ class Spreadsheets(Apps):
             self.delete_sheet(item)
 
     def sheet(self, sheet):
-        return Spreadsheets.Sheet(sheet, self.api, self.name)
+        return Spreadsheets.Sheet(sheet, self.api, self.name, self)
 
 #Decorators
 def updatedSpreadsheet(function):
@@ -389,14 +410,18 @@ class GoogleAPI(Requests):
             break
         return self._files
 
-    def _files_open(self, path, returner, name, where=None):
+    def _files_open(self, path, returner, name, where=None, *, args=None, kwargs=None):
+        if args is None:
+            args = list()
+        if kwargs is None:
+            kwargs = dict()
         if where is None:
             where = self.files
         if name in where:
             self._files_get_id_by_name(name)
             self.get(path + "/" + str(self._file_id))
             self._opened_files[self._file_id] = json.loads(self.text)
-            return returner(self, name)
+            return returner(self, name, *args, **kwargs)
         else:
             raise FileNotFoundError()
 

@@ -177,9 +177,8 @@ class Spreadsheets(Apps):
             if key < 0:
                 key = rows + key
             if key < rows and key >= 0:
-                return Spreadsheets.Sheet.Row(key,
-                                              self.get_range("A"+str(key+1)+":"+self.get_range_name(cols, key+1))[0],
-                                              self)
+                return self.row(key,
+                                self.get_range("A" + str(key + 1) + ":" + self.get_range_name(cols, key + 1))[0])
             else:
                 raise IndexError()
 
@@ -198,6 +197,9 @@ class Spreadsheets(Apps):
 
         def __repr__(self):
             return str(self.get_sheet_values(self.sheet_name, name=self.name))
+
+        def row(self, key, range):
+            return Spreadsheets.Sheet.Row(key, range, self)
 
     def __init__(self, gapi, name):
         super().__init__(gapi, name)

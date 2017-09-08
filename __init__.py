@@ -137,14 +137,14 @@ class Spreadsheets(Apps):
                     while value not in ("Cargando...", "Loading..."):
                         time.sleep(1)
                         value = self.spreadsheet.get_range(self.spreadsheet.get_range_name(key+1, self._index+1))
+                if key >= len(self):
+                    super().extend(["" for i in range(key-len(self))]+[value])
                 super().__setitem__(key, value)
 
             def __delitem__(self, key):
                 self._sheet.clear_range(self._sheet.get_range_name(key + 1, self._index + 1))
                 super().__setitem__(key, "")
 
-            #def __repr__(self):
-            #    return self._values.__repr__()
 
             @property
             def row_index(self):
@@ -164,24 +164,13 @@ class Spreadsheets(Apps):
                                          self._sheet.get_range_name(1, cols),
                                          [values])
 
-            """def __getattribute__(self, item):
-                try:
-                    return object.__getattribute__(self, item)
-                except AttributeError:
-                    return self.__getattr__(item)
-
-            def __getattr__(self, item):
-                try:
-                    return self.__getattribute__(item)
-                except AttributeError:
-                    raise AttributeError()"""
-
         def __init__(self, sheet_name, gapi, name, spreadsheet):
             Apps.__init__(self, gapi, name)
             self._app_name = "spreadsheet"
             self._sheet_name = sheet_name
             self._spreadsheet = spreadsheet
             Apps.__getattribute__(self, "api").spreadsheet_open_sheet(self.sheet_name, name=self.name)
+            self._iter_index = 0
 
         @property
         def sheet_name(self):
@@ -222,6 +211,18 @@ class Spreadsheets(Apps):
 
         def __repr__(self):
             return str(self.get_sheet_values(self.sheet_name, name=self.name))
+
+        def __iter__(self):
+            print("Hola")
+            return self.__next__()
+
+        def __next__(self):
+            print("Caracola")
+            data = self.get_sheet_values(self.sheet_name, name=self.name)
+            print(data)
+            for index, item in enumerate(data):
+                yield self.row(index, item)
+            raise StopIteration()
 
         def row(self, key, range):
             return Spreadsheets.Sheet.Row(key, range, self)

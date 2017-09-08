@@ -535,7 +535,7 @@ class GoogleAPI(Requests):
             name = kwargs["name"]
         elif name is None:
             raise FileNotFoundError()
-        return self._files_open(self, SHEETS, Spreadsheets, name, self.spreadsheets)
+        return self._files_open(SHEETS, Spreadsheets, name, self.spreadsheets)
 
     def spreadsheet_open_sheet(self, sheet_name, *, name=None):
         self._files_get_id_by_name(name)

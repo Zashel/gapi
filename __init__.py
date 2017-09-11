@@ -125,14 +125,17 @@ class Spreadsheets(Apps):
                 self._sheet = sheet
 
             def __getitem__(self, key):
-                if list.__getitem__(self, key).startswith("="):
-                    list.__setitem__ (self, key,
-                                      self.spreadsheet.get_range(self.spreadsheet.get_range_name(key+1, self._index+1)))
+                item = list.__getitem__(self, key)
+                if not isinstance(item, list):
+                    if list.__getitem__(self, key).startswith("="):
+                        list.__setitem__ (self, key,
+                                          self.spreadsheet.get_range(self.spreadsheet.get_range_name(key+1,
+                                                                                                     self._index+1)))
                 return list.__getitem__(self, key)
 
             def __setitem__(self, key, value):
-                self._sheet.update_range(self._sheet.get_range_name(key+1, self._index+1), [[value]])
-                if value.startswith("="):
+                self._sheet.update_range(self._sheet.get_range_name(int(key)+1, int(self._index)+1), [[value]])
+                if isinstance(value, str) and value.startswith("="):
                     value = "Cargando..."
                     while value not in ("Cargando...", "Loading..."):
                         time.sleep(1)
@@ -213,13 +216,10 @@ class Spreadsheets(Apps):
             return str(self.get_sheet_values(self.sheet_name, name=self.name))
 
         def __iter__(self):
-            print("Hola")
             return self.__next__()
 
         def __next__(self):
-            print("Caracola")
             data = self.get_sheet_values(self.sheet_name, name=self.name)
-            print(data)
             for index, item in enumerate(data):
                 yield self.row(index, item)
             raise StopIteration()
@@ -261,6 +261,10 @@ class Spreadsheets(Apps):
             pass
         else:
             self.delete_sheet(item)
+
+    @property
+    def cells(self):
+        return self.get_total_cells()
 
     def sheet(self, sheet):
         return Spreadsheets.Sheet(sheet, self.api, self.name, self)

@@ -3,9 +3,10 @@ import json
 import re
 import os
 import time
-from zashel.winhttp import Requests
+from zashel.winhttp import Requests, encode, decode
 from functools import partial, wraps
 from math import floor
+
 
 LOCALPATH = os.path.join(os.environ["LOCALAPPDATA"], "zashel", "gapi")
 
@@ -151,7 +152,7 @@ class Spreadsheets(Apps):
 
             @property
             def row_index(self):
-                return self._row
+                return self._index
 
             @property
             def sheet_name(self):
@@ -285,11 +286,14 @@ def updatedSpreadsheet(function):
     return wrapper
 
 class GoogleAPI(Requests):
-    def __init__(self, secret_file, scopes):
+    def __init__(self, *, scopes, secret_file=None, secret_data=None, password=None):
         assert os.path.exists(secret_file)
         Requests.__init__(self)
         self.scopes = scopes
         self.secret_file = secret_file
+        if password is None:
+            password = " "
+        self.secret_data = encode(password, json.dumps(secret_data))
         self._teamdrives = dict()
         self._drives = dict()
         self._files = dict()
@@ -340,8 +344,11 @@ class GoogleAPI(Requests):
         self._lastsqueries[key] = datetime.datetime.now() + datetime.timedelta(seconds=QUERYTIMEOUT)
 
     # LOGIN
-    def login(self):
-        self.oauth2(self.scopes, self.secret_file)
+    def login(self, *, password=None):
+        if password is None:
+            password = " "
+        secret_data = json.loads(decode(password, self.secret_data))
+        self.oauth2(self.scopes, json_file=self.secret_file, secret_data=secret_data)
 
     def logout(self):
         self.oauth2_logout()

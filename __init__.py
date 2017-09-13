@@ -4,12 +4,12 @@ import re
 import os
 import time
 import winreg
-from zashel.winhttp import Requests, encode, decode
+from zashel.winhttp import Requests, encode, decode, LOCALPATH
 from functools import partial, wraps
 from math import floor
 
 
-LOCALPATH = os.path.join(os.environ["LOCALAPPDATA"], "zashel", "gapi")
+#LOCALPATH = os.path.join(os.environ["LOCALAPPDATA"], "zashel", "gapi")
 
 # SCOPES
 class SCOPE:
@@ -409,6 +409,8 @@ class GoogleAPI(Requests):
             file_id = self._files[name]["id"]
             self.get(FILEDRIVE.format(file_id), get={"supportsTeamDrives": self._is_teamdrive,
                                                      "alt": "media"})
+        else:
+            raise FileNotFoundError()
         tempfile = os.path.join(self.tempfolder.name, name)
         with open(tempfile, "wb") as f:
             f.write(bytes(self.body))

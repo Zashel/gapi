@@ -3,6 +3,7 @@ import json
 import re
 import os
 import time
+import winreg
 from zashel.winhttp import Requests, encode, decode
 from functools import partial, wraps
 from math import floor
@@ -55,6 +56,8 @@ class SCOPE:
 DRIVE = "https://www.googleapis.com/drive/v3"
 TEAMDRIVES = DRIVE + "/teamdrives"
 FILESDRIVE = DRIVE + "/files"
+FILEDRIVE = FILESDRIVE + "/{}"
+FILEDOWNLOAD = "https://drive.google.com/open"
 COPYFILE = FILESDRIVE + "/{}/copy"
 
 SCRIPTS = "https://script.googleapis.com/v1/scripts/{}:run"
@@ -65,11 +68,20 @@ SHEET_APPEND = SHEET_VALUES + ":append"
 SHEET_CLEAR = SHEET_VALUES + ":clear"
 SHEET_BATCHUPDATE = SHEETS + "/{}:batchUpdate"
 
+
 if not os.path.exists(LOCALPATH):
     os.makedirs(LOCALPATH)
 
 
 QUERYTIMEOUT = 5
+
+
+reghandle = winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\" +\
+                             "Internet Settings\\ZoneMap\\Domains\\googleapis.com\\www")
+winreg.SetValueEx(reghandle, "https", 0, winreg.REG_DWORD, 0)
+winreg.FlushKey(reghandle)
+winreg.CloseKey(reghandle)
+del(reghandle)
 
 
 class DriveNotFoundError(Exception):
@@ -389,6 +401,18 @@ class GoogleAPI(Requests):
                       json={"name": new_name})
         else:
             raise FileNotFoundError
+
+    def file_download(self, name, where=None):
+        if where is None:
+            where = self.files
+        if name in where:
+            file_id = self._files[name]["id"]
+            self.get(FILEDRIVE.format(file_id), get={"supportsTeamDrives": self._is_teamdrive,
+                                                     "alt": "media"})
+        tempfile = os.path.join(self.tempfolder.name, name)
+        with open(tempfile, "wb") as f:
+            f.write(bytes(self.body))
+        return tempfile
 
     def files_list(self, *, drive_name=None, is_teamdrive=False):
         if drive_name is not None:

@@ -384,6 +384,7 @@ class GoogleAPI(Requests):
         id = self._teamdrives[name]
         self._drive_id = id
         self._is_teamdrive = True
+        self._lastsqueries["files"] = None #Set timeout to None to check new teamdrive contents
 
     # FILES
     def _files_get_id_by_name(self, name):

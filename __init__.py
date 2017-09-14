@@ -299,7 +299,8 @@ def updatedSpreadsheet(function):
 
 class GoogleAPI(Requests):
     def __init__(self, *, scopes, secret_file=None, secret_data=None, password=None):
-        assert os.path.exists(secret_file)
+        if secret_file is not None:
+            assert os.path.exists(secret_file)
         Requests.__init__(self)
         self.scopes = scopes
         self.secret_file = secret_file

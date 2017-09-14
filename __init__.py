@@ -103,6 +103,9 @@ class SheetError(Exception):
     pass
 
 class Apps(object):
+    """
+    Base objects for google apps
+    """
     def __init__(self, gapi, name):
         self._api = gapi
         self._name = name

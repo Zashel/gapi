@@ -13,6 +13,9 @@ from math import floor
 
 # SCOPES
 class SCOPE:
+    """
+    Scopes for Google
+    """
     BLOGGER = "https://www.googleapis.com/auth/blogger"
     BLOGGER_READONLY = "https://www.googleapis.com/auth/blogger.readonly"
     BOOKS = "https://www.googleapis.com/auth/books"

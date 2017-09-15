@@ -643,7 +643,7 @@ class GoogleAPI(Requests):
             if sheet["properties"]["title"] == sheet_name:
                 self._opened_sheet = sheet_name
                 return
-        raise SheetNotFoundError()
+        raise SheetNotFoundError(sheet_name)
 
     def spreadsheet_update_range(self, range, values, *, name=None):
         self._files_get_id_by_name(name)

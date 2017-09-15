@@ -478,6 +478,8 @@ class GoogleAPI(Requests):
         return self._files
 
     def _files_open(self, path, returner, name, where=None, *, args=None, kwargs=None):
+        print(args)
+        print(kwargs)
         if args is None:
             args = list()
         if kwargs is None:

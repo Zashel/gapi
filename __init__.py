@@ -169,8 +169,8 @@ class Spreadsheets(Apps):
 
             @property
             def range(self):
-                return self.sheet_name+"!"+self.spreadsheet.get_range_name(1, self.index+1) + \
-                       ":"+self.spreadsheet.get_range_name(len(self)+1, self.index+1)
+                return self.sheet_name+"!"+self.spreadsheet.get_range_name(1, self.row_index+1) + \
+                       ":"+self.spreadsheet.get_range_name(len(self)+1, self.row_index+1)
 
             @property
             def row_index(self):
@@ -253,16 +253,23 @@ class Spreadsheets(Apps):
                 return data[0]
 
         def append_rows(self, values):
-            updated_range = self.spreadsheet.append_rows("A1", values)
-            sheet_name, n_range = updated_range.split("!")
-            init, fin = n_range.split(":")
-            init = int(init.strip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
-            fin = int(fin.strip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
-            final = list()
-            for row_index in range(int(init) - 1, int(fin)):
-                row = self[row_index]
-                final.append(row)
-            return final
+            updated_range = self.spreadsheet.append_rows("A1", [values])
+            if isinstance(updated_range, str):
+                sheet_name, n_range = updated_range.split("!")
+                if ":" in n_range:
+                    init, fin = n_range.split(":")
+                else:
+                    init = fin = n_range
+                init = int(init.strip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+                fin = int(fin.strip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+                final = list()
+                for row_index in range(int(init) - 1, int(fin)):
+                    row = self[row_index]
+                    final.append(row)
+                return final
+            else:
+                print(updated_range)
+                return updated_range
 
         def row(self, key, range):
             return Spreadsheets.Sheet.Row(key, range, self)

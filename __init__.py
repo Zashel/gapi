@@ -167,6 +167,10 @@ class Spreadsheets(Apps):
                 self._sheet.clear_range(self._sheet.get_range_name(key + 1, self._index + 1))
                 super().__setitem__(key, "")
 
+            @property
+            def range(self):
+                return self.sheet_name+"!"+self.spreadsheet.get_range_name(1, self.index+1) + \
+                       ":"+self.spreadsheet.get_range_name(len(self)+1, self.index+1)
 
             @property
             def row_index(self):
@@ -242,6 +246,23 @@ class Spreadsheets(Apps):
             for index, item in enumerate(data):
                 yield self.row(index, item)
             raise StopIteration()
+
+        def append_row(self, values):
+            data = self.append_rows(values)
+            if len(data) > 0:
+                return data[0]
+
+        def append_rows(self, values):
+            updated_range = self.spreadsheet.append_rows("A1", values)
+            sheet_name, n_range = updated_range.split("!")
+            init, fin = n_range.split(":")
+            init = int(init.strip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+            fin = int(fin.strip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+            final = list()
+            for row_index in range(int(init) - 1, int(fin)):
+                row = self[row_index]
+                final.append(row)
+            return final
 
         def row(self, key, range):
             return Spreadsheets.Sheet.Row(key, range, self)
@@ -494,22 +515,23 @@ class GoogleAPI(Requests):
         else:
             raise FileNotOpenError()
 
-    def spreadsheet_append_row(self, range, values, *, name=None):
+    def spreadsheet_append_row(self, _range, values, *, name=None):
         self._files_get_id_by_name(name)
-        range = self.spreadsheet_check_range(range, name=name)
-        return self.spreadsheet_append_rows(range, [values], name=name)
+        _range = self.spreadsheet_check_range(_range, name=name)
+        return self.spreadsheet_append_rows(_range, [values], name=name)
 
-    def spreadsheet_append_rows(self, range, values, *, name=None):
+    def spreadsheet_append_rows(self, _range, values, *, name=None):
         self._files_get_id_by_name(name)
-        range = self.spreadsheet_check_range(range, name=name)
+        _range = self.spreadsheet_check_range(_range, name=name)
         if self._file_id is not None:
-            self.post(SHEET_APPEND.format(self._file_id, range), get={"valueInputOption": "RAW",
+            self.post(SHEET_APPEND.format(self._file_id, _range), get={"valueInputOption": "RAW",
                                                                       "insertDataOption": "INSERT_ROWS",
                                                                       "includeValuesInResponse": "true"},
-                      json={"range": range, "values": values})
+                      json={"range": _range, "values": values})
             data = json.loads(self.text)
             if "updates" in data:
-                return data["updates"]["updatedRange"]
+                updated_range = data["updates"]["updatedRange"]
+                return updated_range
             else:
                 return data
         else:

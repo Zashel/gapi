@@ -670,7 +670,7 @@ class GoogleAPI(Requests):
             raise FileNotOpenError()
 
 
-class sheetlist(list):
+class SheetList(list):
     def __init__(self, sheet):
         assert isinstance(sheet, Spreadsheets.Sheet)
         data = sheet.get_sheet_values()

@@ -236,7 +236,7 @@ class Spreadsheets(Apps):
                 raise IndexError()
 
         def __repr__(self):
-            return str(self.get_sheet_values(self.sheet_name, name=self.name))
+            return str(self.get_sheet_values())
 
         def __iter__(self):
             return self.__next__()
@@ -270,6 +270,9 @@ class Spreadsheets(Apps):
             else:
                 print(updated_range)
                 return updated_range
+
+        def get_sheet_values(self):
+            return self.spreadsheet.spreadsheet_get_sheet_values(self.sheet_name, name=self.name)
 
         def row(self, key, range):
             return Spreadsheets.Sheet.Row(key, range, self)
@@ -667,3 +670,37 @@ class GoogleAPI(Requests):
             raise FileNotOpenError()
 
 
+class sheetlist(list):
+    def __init__(self, sheet):
+        assert isinstance(sheet, Spreadsheets.Sheet)
+        data = sheet.get_sheet_values()
+        if data[-1] == []:
+            del(data[-1])
+        if all([len(item)==1 for item in data]):
+            data = [item[0] for item in data]
+            cutted = True
+        else:
+            cutted = False
+        super().__init__(data)
+        self.sheet = sheet
+        self.cutted = cutted
+
+    def append(self, item):
+        assert not isinstance(item, tuple)
+        assert not isinstance(item, dict)
+        if isinstance(item, list) and len(item)!=0 and item not in self:
+            self.sheet.append_row(item)
+            list.append(list(self), item)
+        elif isinstance(item, list) and item not in self:
+            self.sheet.append_row(item)
+            if self.cutted:
+                list.append(list(self), item[0])
+            else:
+                list.append(list(self), item)
+        elif item not in self:
+            self.sheet.append_row([item])
+            list.append(list(self), item)
+
+    def update(self, new_list):
+        self.clear()
+        self.extend(new_list)

@@ -214,13 +214,27 @@ class Spreadsheets(Apps):
             cols, rows = Apps.__getattribute__(self, "api").spreadsheet_get_sheet_dimensions(self.sheet_name,
                                                                                              name=self.name)
             Apps.__getattribute__(self, "api").spreadsheet_open_sheet(self.sheet_name, name=self.name)
-            if key < 0:
-                key = rows + key
-            if key < rows and key >= 0:
-                return self.row(key,
-                                self.get_range("A" + str(key + 1) + ":" + self.get_range_name(cols, key + 1))[0])
-            else:
-                raise IndexError()
+            if isinstance(key, int):
+                if key < 0:
+                    key = rows + key
+                if key < rows and key >= 0:
+                    return self.row(key,
+                                    self.get_range("A" + str(key + 1) + ":" + self.get_range_name(cols, key + 1))[0])
+                else:
+                    raise IndexError()
+            elif isinstance(key, slice):
+                init = key.start
+                end = key.stop
+                if init < 0:
+                    init = rows + init
+                if end < 0:
+                    end = rows + end
+                if init < end < rows and end >= init >= 0:
+                    return self.row(key,
+                                    self.get_range("A" + str(init + 1) + ":" + self.get_range_name(cols, end + 1)))
+                else:
+                    raise IndexError()
+
 
         def __setitem__(self, key, values):
             assert isinstance(values, list)
@@ -272,7 +286,7 @@ class Spreadsheets(Apps):
                 return updated_range
 
         def get_sheet_values(self):
-            return self.spreadsheet.spreadsheet_get_sheet_values(self.sheet_name, name=self.name)
+            return self.spreadsheet.get_sheet_values(self.sheet_name, name=self.name)
 
         def row(self, key, range):
             return Spreadsheets.Sheet.Row(key, range, self)

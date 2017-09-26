@@ -82,7 +82,7 @@ QUERYTIMEOUT = 5
 reghandle = winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\" +\
                              "Internet Settings\\ZoneMap\\Domains\\googleapis.com\\www")
 winreg.SetValueEx(reghandle, "https", 0, winreg.REG_DWORD, 0)
-winreg.FlushKey(reghandle)
+winreg.FlushKey()
 winreg.CloseKey(reghandle)
 del(reghandle)
 
@@ -259,7 +259,7 @@ class Spreadsheets(Apps):
             return self.__next__()
 
         def __next__(self):
-            data = self.get_sheet_values(self.sheet_name, name=self.name)
+            data = self.get_sheet_values()
             for index, item in enumerate(data):
                 yield self.row(index, item)
             raise StopIteration()
@@ -319,7 +319,7 @@ class Spreadsheets(Apps):
         self.add_sheet(item)
         sheet = self.sheet(item)
         if values:
-            sheet.append_rows("a1", values)
+            sheet.append_rows(values)
 
     def __delitem__(self, item):
         try:
@@ -332,6 +332,35 @@ class Spreadsheets(Apps):
     @property
     def cells(self):
         return self.get_total_cells()
+
+    @property
+    def developer_metadata(self):
+        return self.resource["developerMetadata"]
+
+    @property
+    def id(self):
+        return self.resource["spreadsheetId"]
+
+    @property
+    def named_ranges(self):
+        return self.resource["namedRanges"]
+
+    @property
+    def properties(self):
+        return self.resource["properties"]
+
+    @property
+    def resource(self):
+        _id = self.api._files_get_id_by_name(self.name)
+        return self.api._opened_files[_id]
+
+    @property
+    def sheets(self):
+        return self.resource["sheets"]
+
+    @property
+    def url(self):
+        return self.resource["spreadsheetUrl"]
 
     def sheet(self, sheet):
         return Spreadsheets.Sheet(sheet, self.api, self.name, self)

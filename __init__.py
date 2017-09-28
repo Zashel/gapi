@@ -82,7 +82,7 @@ QUERYTIMEOUT = 5
 reghandle = winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\" +\
                              "Internet Settings\\ZoneMap\\Domains\\googleapis.com\\www")
 winreg.SetValueEx(reghandle, "https", 0, winreg.REG_DWORD, 0)
-winreg.FlushKey()
+winreg.FlushKey(reghandle)
 winreg.CloseKey(reghandle)
 del(reghandle)
 
@@ -558,16 +558,17 @@ class GoogleAPI(Requests):
 
     # SPREADSHEETS
     @updatedSpreadsheet
-    def spreadsheet_add_sheet(self, sheetname, *, name=None):
+    def spreadsheet_add_sheet(self, sheetname, *, name=None, rows=1, columns=3):
         self._files_get_id_by_name(name)
         if self._file_id is not None:
             data = {"includeSpreadsheetInResponse": "true",
                     "requests": [{"addSheet": {"properties": {"title": sheetname,
-                                                              "gridProperties": {"rowCount": 1,
-                                                                                 "columnCount": 3}}}},
+                                                              "gridProperties": {"rowCount": rows,
+                                                                                 "columnCount": columns}}}},
                                  ]
                     }
             self.post(SHEET_BATCHUPDATE.format(self._file_id), json=data)
+            return self.spreadsheet_open_sheet(sheetname, name=name)
         else:
             raise FileNotOpenError()
 

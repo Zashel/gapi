@@ -4,6 +4,7 @@ import re
 import os
 import time
 import winreg
+from comtypes import COMError
 from zashel.winhttp import Requests, encode, decode, LOCALPATH
 from functools import partial, wraps
 from math import floor
@@ -44,8 +45,8 @@ class SCOPE:
     SIGN_IN_PROFILE = "profile"
     SIGN_IN_EMAIL = "email"
     SIGN_IN_OPENID = "openid"
-    SPREADSHEETS = "https://www.googleapis.com/auth/spreadsheets 12"
-    SPREADSHEETS_READONLY = "https://www.googleapis.com/auth/spreadsheets 12.readonly"
+    SPREADSHEETS = "https://www.googleapis.com/auth/spreadsheets"
+    SPREADSHEETS_READONLY = "https://www.googleapis.com/auth/spreadsheets.readonly"
     PLUS_LOGIN = "https://www.googleapis.com/auth/plus.login"
     PLUS_ME = "https://www.googleapis.com/auth/plus.me"
     USER_ADDRESSES_READ = "https://www.googleapis.com/auth/user.addresses.read"
@@ -65,7 +66,7 @@ COPYFILE = FILESDRIVE + "/{}/copy"
 
 SCRIPTS = "https://script.googleapis.com/v1/scripts/{}:run"
 
-SHEETS = "https://sheets.googleapis.com/v4/spreadsheets 12"
+SHEETS = "https://sheets.googleapis.com/v4/spreadsheets"
 SHEET_VALUES = SHEETS + "/{}/values/{}"
 SHEET_APPEND = SHEET_VALUES + ":append"
 SHEET_CLEAR = SHEET_VALUES + ":clear"
@@ -102,60 +103,110 @@ class SheetNotFoundError(Exception):
 class SheetError(Exception):
     pass
 
-class SpreadsheetNotFoundError(Exception):
+class SpreadsheetNotFoundError(FileNotFoundError):
     pass
 
 class Apps(object):
     """
-    Base objects for google apps
+    Base objects for google apps. To be inherited.
     """
     def __init__(self, gapi, name):
+        """
+        Initializes the app object
+        :param gapi: gapi.GoogleAPI instance
+        :param name: Name of the item accesed by app
+        """
         self._api = gapi
         self._name = name
         self._app_name = ""
 
     @property
     def api(self):
+        """
+        Gives GoogleAPI assigned to.
+        """
         return self._api
 
     @property
     def app_name(self):
+        """
+        Returns the name of the App.
+        """
         return self._app_name
 
     @property
     def name(self):
+        """
+        Returns the name of the object accesed by the app.
+        """
         return self._name
 
     def __getattribute__(self, item):
+        """
+        Override of object.__getattribute__ method to access data in the api directly.
+        :param item: item to access to.
+        :return: value of item if found.
+        """
         try:
             return object.__getattribute__(self, item)
         except AttributeError:
             return self.__getattr__(item)
 
     def __getattr__(self, item):
+        """
+        __getattr__ method to get gapi.GoogleAPI methods by self.app_name+"_"+item.
+        :param item: name of the item in the self.gapi to be searched for.
+        :return: value or method searched.
+        """
         method = "_".join((self.app_name, item))
         method = self.api.__getattribute__(method)
         return partial(method, name=self.name)
 
 
 class Spreadsheets(Apps):
+    """
+    Class of Spreadsheet to get all "spreadsheet_" methos in gapi.GoogleAPI
+    """
     class Sheet(Apps):
+        """
+        Sheet class to access each sheet as a list of lists.
+        """
         class Row(list):
+            """
+            Row class to implement modification of data
+            """
             def __init__(self, index, values, sheet):
+                """
+                Initializes Row with given values. It does not create a row remotely.
+                :param index: location begining with 0 in the gieven gapi.Spreadsheet.Sheet
+                :param values: list of data assigned to Row
+                :param sheet: gapi.Spreadsheet.Sheet instance in which Row is defiend.
+                """
                 super().__init__(values)
                 self._index = index
                 self._sheet = sheet
 
             def __getitem__(self, key):
+                """
+                list.__getitem__ overriding to get remote data if it is locally a function
+                :param key: index of key to search for.
+                :return: value or method searched.
+                """
                 item = list.__getitem__(self, key)
                 if not isinstance(item, list):
                     if list.__getitem__(self, key).startswith("="):
-                        list.__setitem__ (self, key,
-                                          self.spreadsheet.get_range(self.spreadsheet.get_range_name(key+1,
-                                                                                                     self._index+1)))
+                        list.__setitem__(self, key,
+                                         self.spreadsheet.get_range(self.spreadsheet.get_range_name(key+1,
+                                                                                                    self._index+1)))
                 return list.__getitem__(self, key)
 
             def __setitem__(self, key, value):
+                """
+                Overriding of list.__setitem__ to set value both loacally and remotely
+                :param key: key of value to set
+                :param value: new velue to set
+                :return: None
+                """
                 self._sheet.update_range(self._sheet.get_range_name(int(key)+1, int(self._index)+1), [[value]])
                 if isinstance(value, str) and value.startswith("="):
                     value = "Cargando..."
@@ -228,6 +279,10 @@ class Spreadsheets(Apps):
             elif isinstance(key, slice):
                 init = key.start
                 end = key.stop
+                if init is None:
+                    init = 0
+                if end is None or end >= rows:
+                    end = rows - 1
                 if init < 0:
                     init = rows + init
                 if end < 0:
@@ -265,12 +320,17 @@ class Spreadsheets(Apps):
             raise StopIteration()
 
         def append_row(self, values):
-            data = self.append_rows(values)
+            data = self.append_rows([values])
+            return values #TODO Verify data
+            """
             if len(data) > 0:
                 return data[0]
+            """
 
         def append_rows(self, values):
-            updated_range = self.spreadsheet.append_rows("A1", [values])
+            updated_range = self.spreadsheet.append_rows("A1", values)
+            return values
+            """ #TODO Review
             if isinstance(updated_range, str):
                 sheet_name, n_range = updated_range.split("!")
                 if ":" in n_range:
@@ -281,18 +341,26 @@ class Spreadsheets(Apps):
                 fin = int(fin.strip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
                 final = list()
                 for row_index in range(int(init) - 1, int(fin)):
-                    row = self[row_index]
+                    try:
+                        row = self[row_index]
+                    except KeyError:
+                        return updated_range #TODO Pendiente de verificar error raro en este punto en uno de cada 10 casos
                     final.append(row)
                 return final
             else:
                 print(updated_range)
                 return updated_range
+            """
 
         def get_sheet_values(self):
             return self.spreadsheet.get_sheet_values(self.sheet_name, name=self.name)
 
         def row(self, key, range):
             return Spreadsheets.Sheet.Row(key, range, self)
+
+        def update_rows(self, location, values):
+            updated_range = self.spreadsheet.append_rows(location, values, insert_data="OVERWRITE")
+            return values
 
     def __init__(self, gapi, name):
         super().__init__(gapi, name)
@@ -365,20 +433,6 @@ class Spreadsheets(Apps):
     def sheet(self, sheet):
         return Spreadsheets.Sheet(sheet, self.api, self.name, self)
 
-#Decorators
-def updatedSpreadsheet(function):
-    @wraps(function)
-    def wrapper(self, *args, **kwargs):
-        result = function(self, *args, **kwargs)
-        try:
-            data = json.loads(self.text)
-        except json.decoder.JSONDecodeError:
-            pass
-        else:
-            if "updatedSpreadsheet" in data:
-                self._opened_files[self._file_id].update(data["updatedSpreadsheet"])
-        return result
-    return wrapper
 
 class GoogleAPI(Requests):
     def __init__(self, *, scopes, secret_file=None, secret_data=None, password=None):
@@ -399,6 +453,12 @@ class GoogleAPI(Requests):
         self._opened_files = dict()
         self._file_id = None
         self._opened_sheet = None
+        self.get = partial(self.request, "GET")
+        self.post = partial(self.request, "POST")
+        self.put = partial(self.request, "PUT")
+        self.delete = partial(self.request, "DELETE")
+        self.patch = partial(self.request, "PATCH")
+        self.head = partial(self.request, "HEAD")
 
     @property
     def drives(self):
@@ -449,17 +509,37 @@ class GoogleAPI(Requests):
     def logout(self):
         self.oauth2_logout()
 
+    # REQUESTING
+    def request(self, method, url, *, data=None, json=None, headers=None, get=None):
+        while True:
+            try:
+                dataX = Requests.request(self, method, url, data=data, json=json, headers=headers, get=get) # Soberana CAGADA
+                if not int(self.status_code) in (504, 429, 408):
+                    break
+                else:
+                    time.sleep(1)
+            except COMError:
+                time.sleep(1)
+        return dataX
+
     # DRIVES
     def _list_drives(self):
         pass
 
     # TEAMDRIVES
     def _teamdrives_list(self):
-        self.get(TEAMDRIVES)
-        teamdrives = json.loads(self.text)
-        self._teamdrives = dict()
-        for item in teamdrives["teamDrives"]:
-            self._teamdrives[item["name"]] = item["id"]
+        while True:
+            try:
+                self.get(TEAMDRIVES)
+                teamdrives = json.loads(self.text)
+            except json.decoder.JSONDecodeError:
+                time.sleep(1)
+                continue
+            else:
+                self._teamdrives = dict()
+                for item in teamdrives["teamDrives"]:
+                    self._teamdrives[item["name"]] = item["id"]
+                break
 
     def teamdrive_open(self, name):
         teamdrives = self.teamdrives
@@ -477,6 +557,7 @@ class GoogleAPI(Requests):
                 self._file_id = self._files[name]["id"]
             else:
                 raise FileNotFoundError()
+        return self._file_id
 
     def file_copy(self, origin, new_name):
         files = self.files
@@ -522,15 +603,20 @@ class GoogleAPI(Requests):
         get.update({"pageSize": 1000})
         self._files = dict()
         while True:
-            self.get(FILESDRIVE, get=get)
-            data = json.loads(self.text)
-            if "files" in data:
-                for item in data["files"]:
-                    self._files[item["name"]] = item
-            if "nextPageToken" in data:
-                get.update({"pageToken": data["nextPageToken"]})
+            try:
+                self.get(FILESDRIVE, get=get)
+                data = json.loads(self.text)
+            except json.decoder.JSONDecodeError:
+                time.sleep(1)
                 continue
-            break
+            else:
+                if "files" in data:
+                    for item in data["files"]:
+                        self._files[item["name"]] = item
+                if "nextPageToken" in data:
+                    get.update({"pageToken": data["nextPageToken"]})
+                    continue
+                break
         return self._files
 
     def _files_open(self, path, returner, name, where=None, *, args=None, kwargs=None):
@@ -541,10 +627,16 @@ class GoogleAPI(Requests):
         if where is None:
             where = self.files
         if name in where:
-            self._files_get_id_by_name(name)
-            self.get(path + "/" + str(self._file_id))
-            self._opened_files[self._file_id] = json.loads(self.text)
-            return returner(self, name, *args, **kwargs)
+            while True:
+                try:
+                    self._files_get_id_by_name(name)
+                    self.get(path + "/" + str(self._file_id))
+                    self._opened_files[self._file_id] = json.loads(self.text)
+                except json.decoder.JSONDecodeError:
+                    time.sleep(1)
+                    continue
+                else:
+                    return returner(self, name, *args, **kwargs)
         else:
             raise FileNotFoundError()
 
@@ -553,11 +645,17 @@ class GoogleAPI(Requests):
         data = {"function": function,
                 "parameters": parameters,
                 "devMode": dev_mode}
-        self.post(SCRIPTS.format(script_id), json=data)
-        return json.loads(self.text)
+        while True:
+            try:
+                self.post(SCRIPTS.format(script_id), json=data)
+                data = json.loads(self.text)
+            except json.decoder.JSONDecodeError:
+                time.sleep(1)
+                continue
+            else:
+                return data
 
     # SPREADSHEETS
-    @updatedSpreadsheet
     def spreadsheet_add_sheet(self, sheetname, *, name=None, rows=1, columns=3):
         self._files_get_id_by_name(name)
         if self._file_id is not None:
@@ -567,30 +665,61 @@ class GoogleAPI(Requests):
                                                                                  "columnCount": columns}}}},
                                  ]
                     }
-            self.post(SHEET_BATCHUPDATE.format(self._file_id), json=data)
+            while True:
+                try:
+                    self.post(SHEET_BATCHUPDATE.format(self._file_id), json=data)
+                    data = json.loads(self.text)
+                except json.decoder.JSONDecodeError:
+                    time.sleep(1)
+                    continue
+                else:
+                    if "updatedSpreadsheet" in data:
+                        self._opened_files[self._file_id].update(data["updatedSpreadsheet"])
+                    break
             return self.spreadsheet_open_sheet(sheetname, name=name)
         else:
             raise FileNotOpenError()
 
-    def spreadsheet_append_row(self, _range, values, *, name=None):
+    def spreadsheet_append_row(self, _range, values, *, name=None, input_option="USER_ENTERED", insert_data="INSERT_ROWS"):
         self._files_get_id_by_name(name)
         _range = self.spreadsheet_check_range(_range, name=name)
-        return self.spreadsheet_append_rows(_range, [values], name=name)
+        return self.spreadsheet_append_rows(_range, [values], name=name, input_option=input_option, insert_data=insert_data)
 
-    def spreadsheet_append_rows(self, _range, values, *, name=None):
+    def spreadsheet_append_rows(self, _range, values, *, name=None,
+                                input_option="USER_ENTERED", insert_data="INSERT_ROWS"):
+        """
+        Appends or replaces given rows in given range. In case of appending, it is appended to the end of the table.
+        :param _range: Range in "A1" notation
+        :param values: List of lists of values, each list being a new row
+        :param name: name of the spreadsheet to append. Opened sheet by default
+        :param input_option: how data may be processed, "USER_ENTERED" by default, "RAW" to be given if data may be
+                            included as is
+        :param insert_data: how data will be inserted, "INSERT_ROWS" by default, "OVERWRITE" in case it would be
+                            updated
+        :return: The updated range in "A1" notation
+        """
         self._files_get_id_by_name(name)
         _range = self.spreadsheet_check_range(_range, name=name)
+        print(insert_data)
         if self._file_id is not None:
-            self.post(SHEET_APPEND.format(self._file_id, _range), get={"valueInputOption": "RAW",
-                                                                      "insertDataOption": "INSERT_ROWS",
-                                                                      "includeValuesInResponse": "true"},
-                      json={"range": _range, "values": values})
-            data = json.loads(self.text)
-            if "updates" in data:
-                updated_range = data["updates"]["updatedRange"]
-                return updated_range
-            else:
-                return data
+            while True:
+                try:
+                    self.post(SHEET_APPEND.format(self._file_id, _range), get={"valueInputOption": input_option,
+                                                                               "insertDataOption": insert_data,
+                                                                               "includeValuesInResponse": "true"},
+                              json={"range": _range, "values": values})
+                    data = json.loads(self.text)
+                except json.decoder.JSONDecodeError:
+                    time.sleep(1)
+                    continue
+                else:
+                    with open("data.json", "w") as f:
+                        f.write(json.dumps(data))
+                    if "updates" in data:
+                        updated_range = data["updates"]["updatedRange"]
+                        return updated_range
+                    else:
+                        return data
         else:
             raise FileNotOpenError()
 
@@ -602,7 +731,6 @@ class GoogleAPI(Requests):
         else:
             raise FileNotOpenError()
 
-    @updatedSpreadsheet
     def spreadsheet_delete_sheet(self, sheetname, *, name=None):
         self._files_get_id_by_name(name)
         if self._file_id is not None:
@@ -614,7 +742,17 @@ class GoogleAPI(Requests):
                         "requests": [{"deleteSheet": {"sheetId": sheet_id}},
                                      ]
                         }
-                self.post(SHEET_BATCHUPDATE.format(self._file_id), json=data)
+                while True:
+                    try:
+                        self.post(SHEET_BATCHUPDATE.format(self._file_id), json=data)
+                        data = json.loads(self.text)
+                    except json.decoder.JSONDecodeError:
+                        time.sleep(1)
+                        continue
+                    else:
+                        if "updatedSpreadsheet" in data:
+                            self._opened_files[self._file_id].update(data["updatedSpreadsheet"])
+                        break
             else:
                 raise SheetNotFoundError()
         else:
@@ -672,7 +810,14 @@ class GoogleAPI(Requests):
         self._files_get_id_by_name(name)
         range = self.spreadsheet_check_range(range, name=name)
         if self._file_id is not None:
-            data = json.loads(self.get(SHEET_VALUES.format(self._file_id, range)))
+            while True:
+                try:
+                    data = json.loads(self.get(SHEET_VALUES.format(self._file_id, range)))
+                except json.decoder.JSONDecodeError:
+                    time.sleep(1)
+                    continue
+                else:
+                    break
             if "values" in data:
                 return data["values"]
             else:
@@ -682,7 +827,15 @@ class GoogleAPI(Requests):
 
     def spreadsheet_get_total_cells(self, *, name=None):
         self._files_get_id_by_name(name)
-        sheets = self._opened_files[self._file_id]["sheets"]
+        while True:
+            try:
+                sheets = self._opened_files[self._file_id]["sheets"]
+            except KeyError:
+                time.sleep(1)
+                pass
+            else:
+                time.sleep(1)
+                break
         return sum([sheet["properties"]["gridProperties"]["columnCount"]*sheet["properties"]["gridProperties"]["rowCount"]
                     for sheet in sheets])
 
@@ -695,7 +848,17 @@ class GoogleAPI(Requests):
 
     def spreadsheet_open_sheet(self, sheet_name, *, name=None):
         self._files_get_id_by_name(name)
-        sheets = self._opened_files[self._file_id]["sheets"]
+        while True:
+            try:
+                sheets = self._opened_files[self._file_id]["sheets"]
+            except KeyError:
+                self.spreadsheet_open(name)
+                self._files_get_id_by_name(name)
+                time.sleep(1)
+                pass
+            else:
+                time.sleep(1)
+                break
         for sheet in sheets:
             if sheet["properties"]["title"] == sheet_name:
                 self._opened_sheet = sheet_name
@@ -706,9 +869,16 @@ class GoogleAPI(Requests):
         self._files_get_id_by_name(name)
         range = self.spreadsheet_check_range(range, name=name)
         if self._file_id is not None:
-            data = json.loads(self.put(SHEET_VALUES.format(self._file_id, range),
-                                       get={"valueInputOption": "USER_ENTERED"},
-                                       json={"range": range, "values": values}))
+            while True:
+                try:
+                    data = json.loads(self.put(SHEET_VALUES.format(self._file_id, range),
+                                               get={"valueInputOption": "USER_ENTERED"},
+                                               json={"range": range, "values": values}))
+                except json.decoder.JSONDecodeError:
+                    time.sleep(1)
+                    continue
+                else:
+                    break
             if "values" in data:
                 return data["values"]
             else:

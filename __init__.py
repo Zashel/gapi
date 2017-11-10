@@ -61,6 +61,7 @@ DRIVE = "https://www.googleapis.com/drive/v3"
 TEAMDRIVES = DRIVE + "/teamdrives"
 FILESDRIVE = DRIVE + "/files"
 FILEDRIVE = FILESDRIVE + "/{}"
+FILEPERMISSIONS = FILEDRIVE + "/permissions"
 FILEDOWNLOAD = "https://drive.google.com/open"
 COPYFILE = FILESDRIVE + "/{}/copy"
 
@@ -165,7 +166,7 @@ class Apps(object):
 
 class Spreadsheets(Apps):
     """
-    Class of Spreadsheet to get all "spreadsheet_" methos in gapi.GoogleAPI
+    Class of Spreadsheet to get all "spreadsheet_" methods in gapi.GoogleAPI
     """
     class Sheet(Apps):
         """
@@ -514,7 +515,7 @@ class GoogleAPI(Requests):
         while True:
             try:
                 dataX = Requests.request(self, method, url, data=data, json=json, headers=headers, get=get) # Soberana CAGADA
-                if not int(self.status_code) in (504, 429, 408):
+                if not int(self.status_code) in (500, 503, 504, 429, 408):
                     break
                 else:
                     time.sleep(1)
@@ -567,6 +568,31 @@ class GoogleAPI(Requests):
                       json={"name": new_name})
         else:
             raise FileNotFoundError
+
+    def file_crete_premission(self, name, email, *, perm_type="user", role="writer", send_email=False,
+                              body=None, where=None, is_teamdrive=False):
+        """
+        Sets a new permission in indicated file.
+        :param name: Name of file to set a new permission.
+        :param email: User email to set new permissions to.
+        :param perm_type: Type of permission, user by default.
+        :param role: Role to set to user. "writer" to default.
+        :param send_email: Whether to send email or not. False by default.
+        :param body: Body of emails to send.
+        :param where: List of items to search name in. None by default.
+        :param is_teamdrive: Whether where or file is teamdrive or not.
+        :return: None
+        """
+        if where is None:
+            where = self.files
+        if name in where:
+            file_id = self._files[name]["id"]
+            self.port(FILEPERMISSIONS.format(file_id), get={"emailMessage": body,
+                                                             "sendNotificationEmail": send_email,
+                                                             "supportsTeamDrives": is_teamdrive},
+                      data = {"role": role,
+                              "type": perm_type,
+                              "emailAddress": email})
 
     def file_download(self, name, where=None):
         if where is None:
@@ -700,7 +726,6 @@ class GoogleAPI(Requests):
         """
         self._files_get_id_by_name(name)
         _range = self.spreadsheet_check_range(_range, name=name)
-        print(insert_data)
         if self._file_id is not None:
             while True:
                 try:

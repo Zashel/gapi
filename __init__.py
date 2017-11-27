@@ -322,7 +322,7 @@ class Spreadsheets(Apps):
 
         def append_row(self, values):
             data = self.append_rows([values])
-            return values #TODO Verify data
+            return data #TODO Verify data
             """
             if len(data) > 0:
                 return data[0]
@@ -330,7 +330,7 @@ class Spreadsheets(Apps):
 
         def append_rows(self, values):
             updated_range = self.spreadsheet.append_rows("A1", values)
-            return values
+            return updated_range
             """ #TODO Review
             if isinstance(updated_range, str):
                 sheet_name, n_range = updated_range.split("!")
@@ -368,10 +368,7 @@ class Spreadsheets(Apps):
         self._app_name = "spreadsheet"
 
     def __getitem__(self, item):
-        try:
-            return self.sheet(item)
-        except SheetNotFoundError:
-            raise KeyError
+        return self.sheet(item)
 
     def __setitem__(self, item, values=None):
         if values:
@@ -435,11 +432,32 @@ class Spreadsheets(Apps):
         return Spreadsheets.Sheet(sheet, self.api, self.name, self)
 
 
-class GoogleAPI(Requests):
-    def __init__(self, *, scopes, secret_file=None, secret_data=None, password=None):
+class DebugRequests(Requests):
+    def __init__(self, debug):
+        Requests.__init__(self)
+        self.debug = debug
+
+    def request(self, method, url, *, data=None, json=None, headers=None, get=None):
+        request = Requests.request(self, method, url, data=data, json=json, headers=headers, get=get)
+        if self.debug:
+            with open("log.txt", "a") as f:
+                fp = partial(print, file=f)
+                fp(method, url)
+                fp(datetime.datetime.now())
+                fp(f"Data: {data}")
+                fp(f"JSON: {json}")
+                fp(f"Headers: {headers}")
+                fp(f"Get: {get}")
+                fp(f"Result: {request}")
+                fp()
+        return request
+
+
+class GoogleAPI(DebugRequests):
+    def __init__(self, *, scopes, secret_file=None, secret_data=None, password=None, debug=False):
         if secret_file is not None:
             assert os.path.exists(secret_file)
-        Requests.__init__(self)
+        DebugRequests.__init__(self, debug)
         self.scopes = scopes
         self.secret_file = secret_file
         if password is None:
@@ -447,7 +465,7 @@ class GoogleAPI(Requests):
         self.secret_data = encode(password, json.dumps(secret_data))
         self._teamdrives = dict()
         self._drives = dict()
-        self._files = dict()
+        self._files = None
         self._drive_id = None
         self._is_teamdrive = False
         self._lastsqueries = dict()
@@ -467,10 +485,12 @@ class GoogleAPI(Requests):
 
     @property
     def files(self):
-        if self._last_timeout("files") is True:
+        self.files_list()
+        """if self._last_timeout("files") is True:
             self.files_list()
             self._update_timeout("files")
-        return list(self._files.keys())
+        """
+        return self._files
 
     @property
     def spreadsheets(self):
@@ -514,7 +534,7 @@ class GoogleAPI(Requests):
     def request(self, method, url, *, data=None, json=None, headers=None, get=None):
         while True:
             try:
-                dataX = Requests.request(self, method, url, data=data, json=json, headers=headers, get=get) # Soberana CAGADA
+                dataX = DebugRequests.request(self, method, url, data=data, json=json, headers=headers, get=get) # Soberana CAGADA
                 if not int(self.status_code) in (500, 503, 504, 429, 408):
                     break
                 else:
@@ -609,40 +629,68 @@ class GoogleAPI(Requests):
         return tempfile
 
     def files_list(self, *, drive_name=None, is_teamdrive=False):
-        if drive_name is not None:
-            if is_teamdrive is True:
-                self._teamdrives_list()
-                drives = self._teamdrives
-            else:
-                self._list_drives()
-                drives = self._drives
-            if drive_name not in drives:
-                raise is_teamdrive and TeamDriveNotFoundError() or DriveNotFoundError()
-            self._drive_id = drives[drive_name]
-            self._is_teamdrive = is_teamdrive
-        get = dict()
-        if self._is_teamdrive is True:
-            get.update({"corpora": "teamDrive",
-                        "includeTeamDriveItems": "true",
-                        "supportsTeamDrives": "true",
-                        "teamDriveId": self._drive_id})
-        get.update({"pageSize": 1000})
-        self._files = dict()
-        while True:
-            try:
-                self.get(FILESDRIVE, get=get)
-                data = json.loads(self.text)
-            except json.decoder.JSONDecodeError:
-                time.sleep(1)
-                continue
-            else:
-                if "files" in data:
-                    for item in data["files"]:
-                        self._files[item["name"]] = item
-                if "nextPageToken" in data:
-                    get.update({"pageToken": data["nextPageToken"]})
-                    continue
-                break
+        class Files(dict):
+            def __init__(self, gapi, drive_name, is_teamdrive=False):
+                self.gapi = gapi
+                self.drive_name = drive_name
+                self.is_teamdrive = is_teamdrive
+                self.last_loaded = datetime.datetime.now() - datetime.timedelta(minutes=10)
+                self.load(True)
+                dict.__init__(self)
+            def __iter__(self):
+                self.load()
+                return dict.__iter__(self)
+            def __getitem__(self, item):
+                if item in self:
+                    return dict.__getitem__(self, item)
+                else:
+                    raise KeyError()
+            def __contains__(self, filename):
+                if dict.__contains__(self, filename):
+                    return True
+                else:
+                    self.load(True)
+                    return dict.__contains__(self, filename)
+            def load(self, force=False):
+                if force is True or (force is False and
+                                     self.last_loaded <= datetime.datetime.now() - datetime.timedelta(minutes=5)):
+                    print("Loading Files")
+                    if self.drive_name is not None:
+                        if self.is_teamdrive is True:  # TODO
+                            self.gapi._teamdrives_list()
+                            drives = self.gapi._teamdrives
+                        else:
+                            pass
+                            drives = self.gapi._drives
+                        if drive_name not in drives:
+                            raise is_teamdrive and TeamDriveNotFoundError() or DriveNotFoundError()
+                        self.gapi._drive_id = drives[drive_name]
+                        self.gapi._is_teamdrive = is_teamdrive
+                    get = dict()
+                    if self.gapi._is_teamdrive is True:
+                        get.update({"corpora": "teamDrive",
+                                    "includeTeamDriveItems": "true",
+                                    "supportsTeamDrives": "true",
+                                    "teamDriveId": self.gapi._drive_id})
+                    get.update({"pageSize": 1000})
+                    while True:
+                        try:
+                            self.gapi.get(FILESDRIVE, get=get)
+                            data = json.loads(self.gapi.text)
+                        except json.decoder.JSONDecodeError:
+                            time.sleep(1)
+                            continue
+                        else:
+                            if "files" in data:
+                                for item in data["files"]:
+                                    self[item["name"]] = item
+                            if "nextPageToken" in data:
+                                get.update({"pageToken": data["nextPageToken"]})
+                                continue
+                            break
+                    self.last_loaded = datetime.datetime.now()
+        if self._files is None or self._files.drive_name != drive_name:
+            self._files = Files(self, drive_name, is_teamdrive)
         return self._files
 
     def _files_open(self, path, returner, name, where=None, *, args=None, kwargs=None):
@@ -656,11 +704,16 @@ class GoogleAPI(Requests):
             while True:
                 try:
                     self._files_get_id_by_name(name)
-                    self.get(path + "/" + str(self._file_id))
-                    self._opened_files[self._file_id] = json.loads(self.text)
+                    if self._file_id not in self._opened_files:
+                        self.get(path + "/" + str(self._file_id))
+                        if self.status_code == 200:
+                            self._opened_files[self._file_id] = json.loads(self.text)
+                        else:
+                            continue
                 except json.decoder.JSONDecodeError:
                     time.sleep(1)
                     continue
+
                 else:
                     return returner(self, name, *args, **kwargs)
         else:
@@ -856,10 +909,10 @@ class GoogleAPI(Requests):
             try:
                 sheets = self._opened_files[self._file_id]["sheets"]
             except KeyError:
-                time.sleep(1)
+                time.sleep(1) # Take a break
                 pass
             else:
-                time.sleep(1)
+                time.sleep(0.5)
                 break
         return sum([sheet["properties"]["gridProperties"]["columnCount"]*sheet["properties"]["gridProperties"]["rowCount"]
                     for sheet in sheets])
@@ -871,12 +924,15 @@ class GoogleAPI(Requests):
             raise FileNotFoundError()
         return self._files_open(SHEETS, Spreadsheets, name, self.spreadsheets)
 
-    def spreadsheet_open_sheet(self, sheet_name, *, name=None):
+    def spreadsheet_open_sheet(self, sheet_name, *, name=None, just_open=False):
         self._files_get_id_by_name(name)
         while True:
             try:
                 sheets = self._opened_files[self._file_id]["sheets"]
             except KeyError:
+                if self._file_id in self._opened_files:
+                    del(self._opened_files[self._file_id])
+                    just_open = True
                 self.spreadsheet_open(name)
                 self._files_get_id_by_name(name)
                 time.sleep(1)
@@ -888,7 +944,12 @@ class GoogleAPI(Requests):
             if sheet["properties"]["title"] == sheet_name:
                 self._opened_sheet = sheet_name
                 return
-        raise SpreadsheetNotFoundError(sheet_name)
+        if not just_open:
+            if self._file_id in self._opened_files:
+                del(self._opened_files[self._file_id])
+            self.spreadsheet_open(name)
+            return self.spreadsheet_open_sheet(sheet_name, name=name, just_open=True)
+        raise SheetNotFoundError(sheet_name)
 
     def spreadsheet_update_range(self, range, values, *, name=None):
         self._files_get_id_by_name(name)

@@ -586,6 +586,8 @@ class GoogleAPI(DebugRequests):
             file_id = self._files[origin]["id"]
             self.post(COPYFILE.format(file_id), get={"supportsTeamDrives": self._is_teamdrive},
                       json={"name": new_name})
+        elif new_name in files:
+            pass # Nothing to do here.
         else:
             raise FileNotFoundError
 
@@ -713,7 +715,6 @@ class GoogleAPI(DebugRequests):
                 except json.decoder.JSONDecodeError:
                     time.sleep(1)
                     continue
-
                 else:
                     return returner(self, name, *args, **kwargs)
         else:
@@ -944,7 +945,7 @@ class GoogleAPI(DebugRequests):
             if sheet["properties"]["title"] == sheet_name:
                 self._opened_sheet = sheet_name
                 return
-        if not just_open:
+        if just_open is False:
             if self._file_id in self._opened_files:
                 del(self._opened_files[self._file_id])
             self.spreadsheet_open(name)

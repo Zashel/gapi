@@ -107,6 +107,81 @@ class SheetError(Exception):
 class SpreadsheetNotFoundError(FileNotFoundError):
     pass
 
+
+class Files(dict):
+    def __init__(self, gapi, drive_name, is_teamdrive=False, *, _type=None):
+        self.gapi = gapi
+        self.drive_name = drive_name
+        self.is_teamdrive = is_teamdrive
+        self.last_loaded = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        self._type = _type
+        self.load(True)
+        dict.__init__(self)
+
+    def __iter__(self):
+        self.load()
+        return dict.__iter__(self)
+
+    def __getitem__(self, item):
+        if item in self:
+            return dict.__getitem__(self, item)
+        else:
+            raise KeyError()
+
+    def __contains__(self, filename):
+        if dict.__contains__(self, filename):
+            return True
+        else:
+            self.load(True)
+            return dict.__contains__(self, filename)
+
+    def copy(self):
+        return Files(self.gapi, self.drive_name, self.is_teamdrive, _type=self._type)
+
+    def load(self, force=False):
+        if force is True or (force is False and
+                                     self.last_loaded <= datetime.datetime.now() - datetime.timedelta(minutes=5)):
+            print("Loading Files")
+            if self.drive_name is not None:
+                if self.is_teamdrive is True:  # TODO
+                    self.gapi._teamdrives_list()
+                    drives = self.gapi._teamdrives
+                else:
+                    pass
+                    drives = self.gapi._drives
+                if self.drive_name not in drives:
+                    raise self.is_teamdrive and TeamDriveNotFoundError() or DriveNotFoundError()
+                self.gapi._drive_id = drives[self.drive_name]
+                self.gapi._is_teamdrive = self.is_teamdrive
+            get = dict()
+            if self.gapi._is_teamdrive is True:
+                get.update({"corpora": "teamDrive",
+                            "includeTeamDriveItems": "true",
+                            "supportsTeamDrives": "true",
+                            "teamDriveId": self.gapi._drive_id})
+            get.update({"pageSize": 1000})
+            while True:
+                try:
+                    self.gapi.get(FILESDRIVE, get=get)
+                    data = json.loads(self.gapi.text)
+                except json.decoder.JSONDecodeError:
+                    time.sleep(1)
+                    continue
+                else:
+                    if "files" in data:
+                        for item in data["files"]:
+                            self[item["name"]] = item
+                    if "nextPageToken" in data:
+                        get.update({"pageToken": data["nextPageToken"]})
+                        continue
+                    break
+            self.last_loaded = datetime.datetime.now()
+        if self._type is not None:
+            for item in list(self.keys()):
+                if self[item]["mimeType"] != self._type:
+                    del(self[item])
+
+
 class Apps(object):
     """
     Base objects for google apps. To be inherited.
@@ -478,6 +553,8 @@ class GoogleAPI(DebugRequests):
         self.delete = partial(self.request, "DELETE")
         self.patch = partial(self.request, "PATCH")
         self.head = partial(self.request, "HEAD")
+        self._drive_name = None
+        self._spreadsheets = None
 
     @property
     def drives(self):
@@ -494,11 +571,10 @@ class GoogleAPI(DebugRequests):
 
     @property
     def spreadsheets(self):
-        final = list()
-        for item in self.files:
-            if self._files[item]["mimeType"] == "application/vnd.google-apps.spreadsheet":
-                final.append(item)
-        return final
+        if self._spreadsheets is None or self._spreadsheets.drive_name != self._drive_name:
+            self._spreadsheets = Files(self, self._drive_name, self._is_teamdrive,
+                                       _type="application/vnd.google-apps.spreadsheet")
+        return self._spreadsheets
 
     @property
     def teamdrives(self):
@@ -568,6 +644,7 @@ class GoogleAPI(DebugRequests):
             raise TeamDriveNotFoundError()
         id = self._teamdrives[name]
         self._drive_id = id
+        self._drive_name = name
         self._is_teamdrive = True
         self._lastsqueries["files"] = None #Set timeout to None to check new teamdrive contents
 
@@ -631,66 +708,6 @@ class GoogleAPI(DebugRequests):
         return tempfile
 
     def files_list(self, *, drive_name=None, is_teamdrive=False):
-        class Files(dict):
-            def __init__(self, gapi, drive_name, is_teamdrive=False):
-                self.gapi = gapi
-                self.drive_name = drive_name
-                self.is_teamdrive = is_teamdrive
-                self.last_loaded = datetime.datetime.now() - datetime.timedelta(minutes=10)
-                self.load(True)
-                dict.__init__(self)
-            def __iter__(self):
-                self.load()
-                return dict.__iter__(self)
-            def __getitem__(self, item):
-                if item in self:
-                    return dict.__getitem__(self, item)
-                else:
-                    raise KeyError()
-            def __contains__(self, filename):
-                if dict.__contains__(self, filename):
-                    return True
-                else:
-                    self.load(True)
-                    return dict.__contains__(self, filename)
-            def load(self, force=False):
-                if force is True or (force is False and
-                                     self.last_loaded <= datetime.datetime.now() - datetime.timedelta(minutes=5)):
-                    print("Loading Files")
-                    if self.drive_name is not None:
-                        if self.is_teamdrive is True:  # TODO
-                            self.gapi._teamdrives_list()
-                            drives = self.gapi._teamdrives
-                        else:
-                            pass
-                            drives = self.gapi._drives
-                        if drive_name not in drives:
-                            raise is_teamdrive and TeamDriveNotFoundError() or DriveNotFoundError()
-                        self.gapi._drive_id = drives[drive_name]
-                        self.gapi._is_teamdrive = is_teamdrive
-                    get = dict()
-                    if self.gapi._is_teamdrive is True:
-                        get.update({"corpora": "teamDrive",
-                                    "includeTeamDriveItems": "true",
-                                    "supportsTeamDrives": "true",
-                                    "teamDriveId": self.gapi._drive_id})
-                    get.update({"pageSize": 1000})
-                    while True:
-                        try:
-                            self.gapi.get(FILESDRIVE, get=get)
-                            data = json.loads(self.gapi.text)
-                        except json.decoder.JSONDecodeError:
-                            time.sleep(1)
-                            continue
-                        else:
-                            if "files" in data:
-                                for item in data["files"]:
-                                    self[item["name"]] = item
-                            if "nextPageToken" in data:
-                                get.update({"pageToken": data["nextPageToken"]})
-                                continue
-                            break
-                    self.last_loaded = datetime.datetime.now()
         if self._files is None or self._files.drive_name != drive_name:
             self._files = Files(self, drive_name, is_teamdrive)
         return self._files
